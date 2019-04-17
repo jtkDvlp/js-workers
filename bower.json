@@ -1,0 +1,22 @@
+{
+  "name": "js-workers",
+  "homepage": "https://github.com/jtkDvlp/js-workers",
+  "authors": [
+    "jtkDvlp <jtkdevelopments@gmail.com>"
+  ],
+  "description": "A js lib for performing async tasks via web workers",
+  "main": "",
+  "keywords": [
+    "js",
+    "web-worker",
+    "async"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}
