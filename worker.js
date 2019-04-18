@@ -15,7 +15,7 @@ var workers = (function() {
 	var [fun, args] = e.data;
 
 	if(!registeredFunctions[fun]) {
-	    throw new Error("Function not registered");
+	    throw new Error("Function " + workers.id + ":" + fun + " not registered");
 	}
 
 	var result = registeredFunctions[fun].apply(this, args);
