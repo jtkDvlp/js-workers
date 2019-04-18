@@ -25,7 +25,7 @@ var workers = (function() {
 	    }).catch(function(e) {
 		throw new Error(e);
 	    });
-	} else if(result != undefined) {
+	} else if(result !== undefined) {
 	    self.postMessage(result);
 	}
     };
