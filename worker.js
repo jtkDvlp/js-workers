@@ -19,14 +19,16 @@ var workers = (function() {
 	}
 
 	var result = registeredFunctions[fun].apply(this, args);
-	if(result.then && typeof result.then == "function") {
-	    result.then(function(r) {
-		self.postMessage(r);
-	    }).catch(function(e) {
-		throw new Error(e);
-	    });
-	} else if(result != undefined) {
-	    self.postMessage(result);
+	if(result) {
+	    if(result.then && typeof result.then == "function") {
+		result.then(function(r) {
+		    self.postMessage(r);
+		}).catch(function(e) {
+		    throw new Error(e);
+		});
+	    } else {
+		self.postMessage(result);
+	    }
 	}
     };
     
