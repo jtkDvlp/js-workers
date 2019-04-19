@@ -40,6 +40,10 @@ var workers = (function() {
 	    registeredFunctions[name] = fun;
 	},
 
+	registerAll: function(funs) {
+	    registeredFunctions = funs;
+	},
+
 	respond: function(data, transfers) {
 	    self.postMessage(data, transfers);
 	}
