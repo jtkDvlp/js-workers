@@ -3,18 +3,51 @@ var workers = (function() {
 	throw new Error("Workers not supported");
     }
 
-    function workQueueOrIdle(pool, worker) {
+    function repeat(fun, times) {
+	var result = [];
+	for(var i = 0; i < times; ++i) {
+	    result.push(fun.call(null));
+	}
+	return result;
+    }
+
+    function cut(slicesCount, array) {
+	var arrayLength = array.length;
+	var slicesSize = Math.floor(arrayLength / slicesCount);
+
+	var slices = [];
+	for(var i = 0; i < (slicesCount - 1); ++i) {
+	    slices.push(array.slice(i * slicesSize, slicesSize));
+	}
+	slices.push(array.slice(i * slicesSize));
+	return slices;
+    }
+
+    function workWorkerQueueOrIdle(worker) {
+	if(worker.tasksQueue.length > 0) {
+	    var [[resolve, reject], [fun, args, transfers]] = worker.tasksQueue.shift();
+
+	    worker.isRunning = true;
+	    worker.thread.onmessage = function(e) {
+		resolve(e.data);
+	    };
+	    worker.thread.onerror = function(e) {
+		reject(e);
+	    };
+	    worker.thread.postMessage([fun, args], transfers || []);
+	} else {
+	    worker.isRunning = false;
+	}
+    }
+
+    function workPoolQueueOrIdle(pool, worker) {
 	if(pool.tasksQueue.length > 0) {
 	    var [[resolve, reject], [fun, args, transfers]] = pool.tasksQueue.shift();
-	    workers.useWorker(worker, fun, args, transfers)
-		.then(resolve)
-		.catch(reject)
-		.finally(function() {
-		    workQueueOrIdle(pool, worker);
-		});
-	} else {
-	    pool.runningWorkers.splice(pool.runningWorkers.indexOf(worker), 1);
-	    pool.idleWorkers.push(worker);
+	    var progress = workers.callWorker(worker, fun, args, transfers);
+	    progress.then(resolve, reject);
+	    progress.finally(() => {
+		workPoolQueueOrIdle(pool, worker);
+	    });
 	}
     }
 
@@ -23,58 +56,79 @@ var workers = (function() {
 	isWorker: document == undefined,
 	
 	createWorker: function(script) {
-	    return new Worker(script);
-	},
-
-	createPool: function(size, script) {
-	    var _workers = []; 
-	    for(var i = 0; i < size; ++i) {
-		_workers.push(workers.createWorker(script));
-	    }
 	    return {
-		workers: _workers,
-		tasksQueue: [],
-		runningWorkers: [],
-		idleWorkers: _workers.slice(0)};
+		thread: new Worker(script),
+		isRunning: false,
+		tasksQueue: []
+	    };
 	},
 
-	useWorker: function(worker, fun, args, transfers) {
+	callWorker: function(worker, fun, args, transfers) {
 	    var task = new Promise(function(resolve, reject) {
-		worker.onmessage = function(e) {
-		    resolve(e.data);
-		};
-		worker.onerror = function(e) {
-		    reject(e);
-		};
-		worker.postMessage([fun, args], transfers || []);
+		worker.tasksQueue.push([[resolve, reject], [fun, args, transfers]]);
+		if(!worker.isRunning) {
+		    workWorkerQueueOrIdle(worker);
+		}
 	    });
 
 	    task.finally(function() {
-		worker.onmessage = null;
-		worker.onerror = null;
+		workWorkerQueueOrIdle(worker);
 	    });
+	    
+	    return task;
+	},
+
+	mapWorker: function(worker, fun, args) {
+	    var args_ = args.slice();
+	    args_.unshift(fun);
+
+	    return workers.callWorker(worker, "pCall", args_);
+	},
+
+	createPool: function(size, script) {
+	    return {
+		workers: repeat(function() {
+		    return workers.createWorker(script);
+		}, size),
+		tasksQueue: []};
+	},
+
+	callPool: function(pool, fun, args, transfers) {
+	    var idleWorker = pool.workers.filter(function(worker) {
+		return !worker.isRunning;
+	    })[0] || null;
+
+	    var task = new Promise(function(resolve, reject) {
+		pool.tasksQueue.push([[resolve, reject], [fun, args, transfers]]);
+	    });
+	    
+	    if(idleWorker) {
+		workPoolQueueOrIdle(pool, idleWorker);
+	    }
 
 	    return task;
 	},
 
-	usePool: function(pool, fun, args, transfers) {
-	    var task = null;
+	callEveryPoolWorker: function(pool, fun, args) {
+	    return Promise.all(pool.workers.map(function(worker) {
+		return workers.callWorker(worker, fun, args);
+	    }));
+	},
+
+	mapPool: function(pool, fun, args, parallel) {
+	    var parallelTasks = parallel || pool.workers.length;
+	    var argSlices = cut(parallelTasks, args);
 	    
-	    if(pool.idleWorkers.length > 0) {
-		var worker = pool.idleWorkers.shift();
-		pool.runningWorkers.push(worker);
-
-		task = workers.useWorker(worker, fun, args, transfers);
-		task.finally(function() {
-		    workQueueOrIdle(pool, worker);
+	    return Promise
+		.all(argSlices.map(function(args) {
+		    var args_ = args.slice();
+		    args_.unshift(fun);
+		    
+		    return workers.callPool(pool, "pCall", args_);
+		})).
+		then(function(slices) {
+		    return Array.prototype.concat.apply(null, slices);
 		});
-	    } else {
-		task = new Promise(function(resolve, reject) {
-		    pool.tasksQueue.push([[resolve, reject], [fun, args, transfers]]);
-		});
-	    }
-
-	    return task;
 	}
     };
 })();

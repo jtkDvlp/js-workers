@@ -20,11 +20,13 @@ var workers = (function() {
 
 	var result = registeredFunctions[fun].apply(this, args);
 	if(result && result.then && typeof result.then == "function") {
-	    result.then(function(r) {
-		self.postMessage(r);
-	    }).catch(function(e) {
-		throw new Error(e);
-	    });
+	    result.then(
+		function(r) {
+		    self.postMessage(r);
+		},
+		function(e) {
+		    throw new Error(e);
+		});
 	} else if(result !== undefined) {
 	    self.postMessage(result);
 	}
@@ -41,7 +43,9 @@ var workers = (function() {
 	},
 
 	registerAll: function(funs) {
-	    registeredFunctions = funs;
+	    for(var fun in funs) {
+		registeredFunctions[fun] = funs[fun];
+	    }
 	},
 
 	respond: function(data, transfers) {
@@ -49,3 +53,13 @@ var workers = (function() {
 	}
     };
 })();
+
+workers.register("pCall", function([fun, ...args]) {
+    if(!registeredFunctions[fun]) {
+	throw new Error("Function " + workers.id + ":" + fun + " not registered");
+    }
+
+    return Promise.all(args.map(function(args) {
+	return registeredFunctions[fun].apply(this, args);
+    }));
+});
